@@ -2,6 +2,7 @@ package ulari
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 )
 
@@ -18,7 +19,9 @@ func TestGenerateHTMLForm(t *testing.T) {
 
 	form := generateHTMLForm(data)
 
-	for _, v := range form.Values {
+	fmt.Printf("form=%+v\n", form)
+
+	for _, v := range form.Fields {
 
 		switch v.(type) {
 		case TextInput:
@@ -34,17 +37,13 @@ func TestGenerateHTMLForm(t *testing.T) {
 }
 
 func TestBind(t *testing.T) {
-	data := struct {
-		Name   string
-		Age    int
-		Active bool
-	}{
-		Name:   "John",
-		Age:    30,
-		Active: true,
-	}
 
-	form := generateHTMLForm(data)
+	data := make(url.Values)
+	data["Name"] = []string{"John"}
+	data["Age"] = []string{"30"}
+	data["Active"] = []string{"true"}
+
+	form := newFromData(&data)
 
 	type Person struct {
 		Name   string
@@ -59,5 +58,7 @@ func TestBind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	fmt.Printf("person=%+v\n", person)
 }
 

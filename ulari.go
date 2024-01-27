@@ -2,6 +2,7 @@ package ulari
 
 import (
 	"fmt"
+	"net/url"
 	"reflect"
 	"strconv"
 )
@@ -12,7 +13,18 @@ type FormInput interface {
 }
 
 type Form struct {
-	Values []FormInput
+	Fields []FormInput
+	Data   *url.Values
+}
+
+func (f *Form) NameValid(name string) bool {
+	for _, v := range f.Fields {
+		if v.GetName() == name {
+			return true
+		}
+	}
+
+	return false
 }
 
 type formInput struct {
@@ -48,8 +60,17 @@ type BoolInput struct {
 
 func newForm() *Form {
 	return &Form{
-		Values: []FormInput{},
+		Fields: []FormInput{},
 	}
+}
+
+func newFromData(data *url.Values) *Form {
+
+	form := newForm()
+
+	form.Data = data
+
+	return form
 }
 
 func (f *Form) Bind(data interface{}) error {
@@ -61,33 +82,51 @@ func (f *Form) Bind(data interface{}) error {
 
 	structVal := val.Elem()
 
-	for _, v := range f.Values {
-		_, ok := structVal.Type().FieldByName(v.GetName())
+	for k, v := range *f.Data {
+		fmt.Printf("v=%v\n", v)
+		_, ok := structVal.Type().FieldByName(k)
 
 		if !ok {
-			return fmt.Errorf("field %s not found in struct", v.GetName())
+			return fmt.Errorf("field %s not found in struct", k)
 		}
 
-		field := structVal.FieldByName(v.GetName())
+		field := structVal.FieldByName(k)
 
 		if !field.IsValid() || !field.CanSet() {
-			return fmt.Errorf("field %s is not valid or cannot be set", v.GetName())
+			return fmt.Errorf("field %s is not valid or cannot be set", k)
 		}
 
-		switch t := v.(type) {
-		case TextInput:
-			field.SetString(t.GetValue())
-		case HiddenInput:
-		case BoolInput:
-			field.SetBool(t.GetValue() == "on")
-		case NumberInput:
-			sv := t.GetValue()
-			iv, err := strconv.ParseInt(sv, 10, 64)
+		switch field.Kind() {
+
+		case reflect.String:
+			field.SetString(v[0])
+
+		case reflect.Int:
+			iv, err := strconv.ParseInt(v[0], 10, 64)
 			if err != nil {
-				return fmt.Errorf("field %s is not a valid number: %w", sv, err)
+				return fmt.Errorf("field %s is not a valid number: %w", v[0], err)
 			}
 			field.SetInt(iv)
+		case reflect.Bool:
+			field.SetBool(v[0] == "on")
+		default:
+			return fmt.Errorf("field %s is not a valid type", k)
 		}
+
+		// switch t := v.(type) {
+		// case TextInput:
+		// 	field.SetString(t.GetValue())
+		// case HiddenInput:
+		// case BoolInput:
+		// 	field.SetBool(t.GetValue() == "on")
+		// case NumberInput:
+		// 	sv := t.GetValue()
+		// 	iv, err := strconv.ParseInt(sv, 10, 64)
+		// 	if err != nil {
+		// 		return fmt.Errorf("field %s is not a valid number: %w", sv, err)
+		// 	}
+		// 	field.SetInt(iv)
+		// }
 
 	}
 
@@ -116,8 +155,9 @@ func generateHTMLForm(data interface{}) *Form {
 					Value: field.String(),
 				},
 			}
-			fi.Html = "<input type=\"text\" name=\"" + fieldName + "\" value=\"" + field.String() + "\">"
-			form.Values = append(form.Values, fi)
+			fi.Html = fmt.Sprintf(`<input type="text" name="%s" value="%s">`, fieldName, field.String())
+
+			form.Fields = append(form.Fields, fi)
 		case reflect.Int:
 			fi := NumberInput{
 				formInput{
@@ -125,8 +165,8 @@ func generateHTMLForm(data interface{}) *Form {
 					Value: field.String(),
 				},
 			}
-			fi.Html = "<input type=\"number\" name=\"" + fieldName + "\" value=\"" + field.String() + "\">"
-			form.Values = append(form.Values, fi)
+			fi.Html = fmt.Sprintf(`<input type="number" name="%s" value="%s">`, fieldName, field.String())
+			form.Fields = append(form.Fields, fi)
 		case reflect.Bool:
 			fi := BoolInput{
 				formInput{
@@ -134,12 +174,12 @@ func generateHTMLForm(data interface{}) *Form {
 					Value: field.String(),
 				},
 			}
-			s := "<input type=\"checkbox\" name=\"" + fieldName + "\""
+			s := fmt.Sprintf(`<input type="checkbox" name="%s" value="%s">`, fieldName, field.String())
 			if field.Bool() {
 				s += " checked>"
 			}
 			fi.Html = s
-			form.Values = append(form.Values, fi)
+			form.Fields = append(form.Fields, fi)
 		}
 	}
 
